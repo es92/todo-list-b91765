@@ -403,6 +403,11 @@
     const shotNocache = shot === 'nocache';
     const shotCollapsed = shot === 'collapsed';
     const shotDiag = shot === 'diag';
+    // `?shot=menu` opens a list with the ☰ menu already down, because the
+    // completed-items actions (issue #68) only exist behind that tap.
+    // Display-only, like every other shot link: it opens the menu and
+    // writes nothing.
+    const shotMenu = shot === 'menu';
     const shotNostore = shot === 'nostore';
     // Screenshot/test deep link for the state this change introduces: a
     // finished category expanded to show the lane a dragged row now lands on
@@ -1406,14 +1411,15 @@
     function showCompleted() {
       return rawGet(SHOW_COMPLETED_KEY) !== 'false'; // default: shown
     }
+
     function setShowCompleted(v) {
       rawSet(SHOW_COMPLETED_KEY, v ? 'true' : 'false');
-      // The global switch resets any per-category overrides so flipping it
+      // The global setting resets any per-category overrides so changing it
       // always visibly applies everywhere.
       for (const k of Object.keys(catDoneOverrides)) delete catDoneOverrides[k];
-      // Fully-completed categories default to COLLAPSED, so "Show all done"
-      // gives them an explicit override — otherwise the switch would flip and
-      // nothing on screen would change.
+      // Fully-completed categories default to COLLAPSED, so "Show all
+      // completed" gives them an explicit override — otherwise tapping it
+      // would change nothing on screen.
       if (v && current) {
         for (const c of current.categories) {
           if (isCatFullyDone(c.id)) setCatCollapsed(c.id, false);
@@ -1654,6 +1660,7 @@
       else if (shotCollapsed) loadShotCollapsed();
       else if (shotDrop) loadShotDrop();
       else if (shotDiag) loadShotDiag();
+      else if (shotMenu) loadShotMenu();
       else loadHome();
     }
     window.addEventListener('hashchange', route);
@@ -1901,6 +1908,19 @@
       if (!lists.length) { await loadHome(); }
       else { await loadList(lists[0].id); }
       openDiagnostics();
+    }
+
+    // Screenshot-state deep link — `/?shot=menu` opens a list with the ☰ menu
+    // dropped down, where the two completed-items rows live. It is opened
+    // directly rather than through toggleDrawer so the shot is the same on a
+    // touch device, where the menu is a bottom sheet.
+    async function loadShotMenu() {
+      let lists = [];
+      try { ({ lists } = await api('/api/lists')); } catch (_) {}
+      if (!lists.length) return loadHome();
+      await loadList(lists[0].id);
+      const d = document.getElementById('drawer');
+      if (d) d.classList.remove('hidden');
     }
 
     // Screenshot-state deep link — `/?shot=undo` opens a list with the undo
@@ -2684,10 +2704,15 @@
     function drawerItemsHtml(isOwner, sheet) {
       const c = sheet ? 'sheet-row un-pressable' : DRAWER_ITEM;
       return `
-        <label class="${c} cursor-pointer">
-          <span>Show completed</span>
-          <input type="checkbox" class="un-switch" ${showCompleted() ? 'checked' : ''} onchange="setShowCompleted(this.checked)">
-        </label>
+        <!-- Completed items: two plain actions, a row each, indistinguishable
+             from the actions below them (issue #68). Both write the same
+             stored preference the old switch did, and neither carries a
+             selected state — they read as things you do, not a setting whose
+             position you have to interpret. -->
+        <button type="button" data-done-row="show" class="${c}"
+                onclick="setShowCompleted(true)">Show all completed</button>
+        <button type="button" data-done-row="hide" class="${c}"
+                onclick="setShowCompleted(false)">Hide all completed</button>
         ${isOwner && current ? `
         <!-- Off by default, per list, owner-only (issue #38). The class rather
              than an id: this markup renders twice (dropdown + bottom sheet). -->
